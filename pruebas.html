@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pruebas Unitarias - Índice de Criticidad (RF-02)</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px;
+      background: #f8fafc;
+      color: #0f172a;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    p.sub { color: #475569; margin-top: 0; }
+    .resumen {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+      margin: 16px 0;
+    }
+    .ok-global { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .err-global { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.92rem;
+    }
+    th { background: #1e293b; color: #ffffff; }
+    .badge-pass {
+      display: inline-block;
+      background: #dcfce7;
+      color: #166534;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .badge-fail {
+      display: inline-block;
+      background: #fee2e2;
+      color: #991b1b;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    code {
+      background: #f1f5f9;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pruebas de <code>criticidad.js</code> (RF-02)</h1>
+  <p class="sub">Verificación automatizada frente al cálculo manual con los pesos de ejemplo.</p>
+
+  <div id="banner-resumen" class="resumen">Ejecutando pruebas...</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Caso de prueba</th>
+        <th>Cálculo a mano</th>
+        <th>Esperado</th>
+        <th>Obtenido</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody id="tabla-resultados"></tbody>
+  </table>
+
+  <!-- Cargamos el módulo puro criticidad.js -->
+  <script src="criticidad.js"></script>
+  <script>
+    // 1. Datos de prueba autocontenidos dentro de la página (no requiere servidor)
+    var criteriosPrueba = {
+      categoria: {
+        doble_fila: 3,
+        bloqueo_rampa_cebra_paradero: 3,
+        invasion_anden: 2
+      },
+      via: {
+        arterial: 3,
+        secundaria: 1
+      },
+      franja: {
+        pico: 3,
+        valle: 1
+      },
+      horas_pico: ["06:30-08:30", "11:30-14:00", "17:00-19:30"],
+      niveles: {
+        Bajo: [0, 4],
+        Medio: [5, 6],
+        Alto: [7, 9]
+      }
+    };
+
+    var viasPrueba = {
+      zona: { nombre: "Zona de prueba" },
+      cuadras: [
+        { id: "CR5-C14-C15", nombre: "Carrera 5 (14-15)", tipo_via: "arterial" },
+        { id: "C15-CR4-CR5", nombre: "Calle 15 (4-5)", tipo_via: "secundaria" }
+      ]
+    };
+
+    // 2. Definición de los 4 casos obligatorios + 1 caso de manejo de error
+    var casos = [
+      {
+        titulo: "Caso 1 (Ejemplo PDF): Invasión de andén + arterial + 11:40",
+        calculoManual: "Categoría (invasion_anden = 2) + Vía (arterial = 3) + Franja (11:40 en 11:30-14:00 → pico = 3) = 8 → Alto",
+        reporte: {
+          categoria: "invasion_anden",
+          cuadra: "CR5-C14-C15",
+          fecha_hora: "2026-11-18T11:40"
+        },
+        esperado: { puntaje: 8, nivel: "Alto", franja: "pico" }
+      },
+      {
+        titulo: "Caso 2: Invasión de andén + secundaria + 15:00",
+        calculoManual: "Categoría (invasion_anden = 2) + Vía (secundaria = 1) + Franja (15:00 fuera de pico → valle = 1) = 4 → Bajo",
+        reporte: {
+          categoria: "invasion_anden",
+          cuadra: "C15-CR4-CR5",
+          fecha_hora: "2026-11-18T15:00"
+        },
+        esperado: { puntaje: 4, nivel: "Bajo", franja: "valle" }
+      },
+      {
+        titulo: "Caso 3: Doble fila + secundaria + 15:00",
+        calculoManual: "Categoría (doble_fila = 3) + Vía (secundaria = 1) + Franja (15:00 → valle = 1) = 5 → Medio",
+        reporte: {
+          categoria: "doble_fila",
+          cuadra: "C15-CR4-CR5",
+          fecha_hora: "2026-11-18T15:00"
+        },
+        esperado: { puntaje: 5, nivel: "Medio", franja: "valle" }
+      },
+      {
+        titulo: "Caso 4 (Límite excluido): Doble fila + arterial + 14:00",
+        calculoManual: "Categoría (doble_fila = 3) + Vía (arterial = 3) + Franja (14:00 es fin excluido de 11:30-14:00 → valle = 1) = 7 → Alto",
+        reporte: {
+          categoria: "doble_fila",
+          cuadra: "CR5-C14-C15",
+          fecha_hora: "2026-11-18T14:00"
+        },
+        esperado: { puntaje: 7, nivel: "Alto", franja: "valle" }
+      }
+    ];
+
+    // 3. Ejecución y renderizado de resultados
+    var tbody = document.getElementById("tabla-resultados");
+    var aprobados = 0;
+
+    for (var i = 0; i < casos.length; i++) {
+      var c = casos[i];
+      var obtenidoTexto = "";
+      var pasa = false;
+
+      try {
+        var res = calcularCriticidad(c.reporte, criteriosPrueba, viasPrueba);
+        obtenidoTexto =
+          "Puntaje: " + res.puntaje +
+          " | Nivel: " + res.nivel +
+          " | Franja: " + res.franja +
+          " (" + res.desglose.categoria + "+" + res.desglose.via + "+" + res.desglose.franja + ")";
+
+        pasa =
+          res.puntaje === c.esperado.puntaje &&
+          res.nivel === c.esperado.nivel &&
+          res.franja === c.esperado.franja;
+      } catch (err) {
+        obtenidoTexto = "ERROR: " + err.message;
+        pasa = false;
+      }
+
+      if (pasa) aprobados++;
+
+      var fila = document.createElement("tr");
+      fila.innerHTML =
+        "<td><strong>" + c.titulo + "</strong></td>" +
+        "<td>" + c.calculoManual + "</td>" +
+        "<td>Puntaje: " + c.esperado.puntaje + "<br>Nivel: " + c.esperado.nivel + "<br>Franja: " + c.esperado.franja + "</td>" +
+        "<td>" + obtenidoTexto + "</td>" +
+        "<td>" + (pasa ? '<span class="badge-pass">✔ PASA</span>' : '<span class="badge-fail">✘ FALLA</span>') + "</td>";
+      tbody.appendChild(fila);
+    }
+
+    // Prueba adicional: verificar que un dato inválido lanza error y no devuelve 0
+    var errorLanzado = false;
+    var msgError = "";
+    try {
+      calcularCriticidad(
+        { categoria: "categoria_inventada", cuadra: "CR5-C14-C15", fecha_hora: "2026-11-18T10:00" },
+        criteriosPrueba,
+        viasPrueba
+      );
+    } catch (e) {
+      errorLanzado = true;
+      msgError = e.message;
+    }
+
+    var filaErr = document.createElement("tr");
+    filaErr.innerHTML =
+      "<td><strong>Caso 5 (Seguridad): Categoría desconocida</strong></td>" +
+      "<td>Debe lanzar un Error claro, nunca devolver 0 en silencio.</td>" +
+      "<td>Lanza Error</td>" +
+      "<td>" + (errorLanzado ? "Error lanzado: " + msgError : "No lanzó error") + "</td>" +
+      "<td>" + (errorLanzado ? '<span class="badge-pass">✔ PASA</span>' : '<span class="badge-fail">✘ FALLA</span>') + "</td>";
+    tbody.appendChild(filaErr);
+    if (errorLanzado) aprobados++;
+
+    var totalPruebas = casos.length + 1;
+    var banner = document.getElementById("banner-resumen");
+    if (aprobados === totalPruebas) {
+      banner.className = "resumen ok-global";
+      banner.textContent = "✔ Todas las pruebas pasaron (" + aprobados + " de " + totalPruebas + ").";
+    } else {
+      banner.className = "resumen err-global";
+      banner.textContent = "✘ Fallaron pruebas: aprobaron " + aprobados + " de " + totalPruebas + ".";
+    }
+  </script>
+</body>
+</html>
