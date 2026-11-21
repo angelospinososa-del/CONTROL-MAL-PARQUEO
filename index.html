@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control de Mal Parqueo - Santa Marta</title>
+  <!-- CSS de Leaflet (CDN exacto obligatorio) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="estilos.css" />
+</head>
+<body>
+  <!-- Encabezado compacto -->
+  <header class="encabezado">
+    <div>
+      <h1 class="titulo-app">Control Vial Santa Marta</h1>
+      <p id="nombre-zona-header" class="subtitulo-zona">Santa Marta · Registro libre</p>
+    </div>
+    <button type="button" id="btn-abrir-ajustes" class="btn-ajustes" aria-label="Ajustes del integrante">
+      ⚙️ <span id="indicador-iniciales">Configurar</span>
+    </button>
+  </header>
+
+  <!-- Aviso obligatorio si se abre con doble clic sin servidor local -->
+  <div id="aviso-fetch" class="banner-error" hidden>
+    No se pudieron leer los archivos JSON: <strong>abre con Live Server o GitHub Pages</strong>.
+  </div>
+
+  <!-- Aviso de contingencia si no hay internet / no cargó Leaflet -->
+  <div id="aviso-sin-mapa" class="aviso-alerta margen-lateral" hidden>
+    Mapa sin conexión: puedes seguir registrando usando el botón <strong>Usar mi ubicación</strong> y escribiendo la dirección exacta.
+  </div>
+
+  <!-- ======================================================================
+       VISTA 1: CAPTURA RÁPIDA (< 30 SEGUNDOS)
+       ====================================================================== -->
+  <main id="vista-captura" class="contenedor-principal">
+    <!-- Tarjeta de confirmación tras guardar -->
+    <section id="tarjeta-confirmacion" class="tarjeta-exito" hidden>
+      <h2>✔ Reporte guardado</h2>
+      <p class="linea-resultado">
+        <span id="confirmacion-desglose"></span>
+        <span id="confirmacion-badge-nivel" class="badge-nivel"></span>
+      </p>
+      <p id="confirmacion-tiempo" class="texto-suave"></p>
+      <button type="button" id="btn-registrar-otro" class="btn-primario btn-ancho">
+        Registrar otro
+      </button>
+    </section>
+
+    <!-- Alerta de cuota llena (QuotaExceededError) -->
+    <section id="aviso-quota" class="banner-error" hidden>
+      <strong>Almacenamiento lleno: exporta y borra registros locales.</strong>
+      <button type="button" id="btn-exportar-emergencia" class="btn-secundario btn-ancho">
+        Exportar respaldo JSON ahora
+      </button>
+    </section>
+
+    <!-- a) Ubicación en mapa / GPS -->
+    <section class="tarjeta">
+      <div class="fila-cabecera-seccion">
+        <h2>1. Punto en el mapa</h2>
+        <button type="button" id="btn-usar-gps" class="btn-secundario">
+          📍 Usar mi ubicación
+        </button>
+      </div>
+      <p class="ayuda-campo">Toca el mapa o arrastra el marcador azul hasta el punto exacto.</p>
+
+      <div id="mapa-captura" class="caja-mapa"></div>
+
+      <div class="fila-coords">
+        <span id="texto-coordenadas" class="texto-mono">Sin ubicación marcada</span>
+      </div>
+      <div id="estado-gps" class="aviso-info" hidden></div>
+      <div id="aviso-precision" class="aviso-info" hidden></div>
+      <div id="error-ubicacion" class="error-campo" hidden></div>
+    </section>
+
+    <!-- b) Ubicación exacta ingresada por el usuario -->
+    <section class="tarjeta">
+      <h2>2. Ubicación exacta del vehículo</h2>
+      <label for="input-cuadra" class="etiqueta-control">Dirección, calle o punto de referencia:</label>
+      <input
+        type="text"
+        id="input-cuadra"
+        class="control-input"
+        maxlength="120"
+        placeholder="Ej. Calle 22 # 4-15, frente al parque"
+        autocomplete="off"
+      />
+
+      <label class="etiqueta-control margen-superior">Tipo de vía:</label>
+      <div id="grupo-tipo-via" class="rejilla-opciones rejilla-2col" role="group" aria-label="Tipo de vía">
+        <button type="button" class="btn-opcion" data-valor="arterial" aria-pressed="false">
+          Vía arterial / principal
+        </button>
+        <button type="button" class="btn-opcion" data-valor="secundaria" aria-pressed="false">
+          Vía secundaria / barrial
+        </button>
+      </div>
+
+      <div id="error-cuadra" class="error-campo" hidden></div>
+    </section>
+
+    <!-- c) Categoría (3 botones grandes, selección única) -->
+    <section class="tarjeta">
+      <h2>3. Categoría de obstrucción</h2>
+      <div id="grupo-categoria" class="rejilla-opciones" role="group" aria-label="Categoría">
+        <button type="button" class="btn-opcion" data-valor="doble_fila" aria-pressed="false">
+          Doble fila / vía prohibida
+        </button>
+        <button type="button" class="btn-opcion" data-valor="bloqueo_rampa_cebra_paradero" aria-pressed="false">
+          Bloqueo rampa, cebra o paradero
+        </button>
+        <button type="button" class="btn-opcion" data-valor="invasion_anden" aria-pressed="false">
+          Invasión de andén
+        </button>
+      </div>
+      <div id="error-categoria" class="error-campo" hidden></div>
+    </section>
+
+    <!-- d) Actor (4 botones grandes, selección única) -->
+    <section class="tarjeta">
+      <h2>4. Tipo de actor</h2>
+      <div id="grupo-actor" class="rejilla-opciones rejilla-2col" role="group" aria-label="Actor">
+        <button type="button" class="btn-opcion" data-valor="vehiculo_particular" aria-pressed="false">
+          Vehículo particular
+        </button>
+        <button type="button" class="btn-opcion" data-valor="motocicleta" aria-pressed="false">
+          Motocicleta
+        </button>
+        <button type="button" class="btn-opcion" data-valor="vehiculo_carga" aria-pressed="false">
+          Vehículo de carga
+        </button>
+        <button type="button" class="btn-opcion" data-valor="mobiliario_comercial" aria-pressed="false">
+          Mobiliario comercial
+        </button>
+      </div>
+      <div id="error-actor" class="error-campo" hidden></div>
+    </section>
+
+    <!-- e) Foto (opcional, anonimizada con pixelado táctil) -->
+    <section class="tarjeta">
+      <h2>5. Foto (opcional)</h2>
+      <p class="aviso-privacidad">Encuadra la obstrucción, no a las personas.</p>
+
+      <div class="fila-botones-foto">
+        <button type="button" id="btn-tomar-foto" class="btn-secundario">📷 Tomar foto</button>
+        <button type="button" id="btn-galeria-foto" class="btn-secundario">🖼️ Galería</button>
+      </div>
+
+      <input type="file" id="input-foto-camara" accept="image/*" capture="environment" hidden />
+      <input type="file" id="input-foto-galeria" accept="image/*" hidden />
+
+      <div id="zona-edicion-foto" class="zona-canvas" hidden>
+        <p class="ayuda-campo">
+          <strong>Herramienta Pixelar:</strong> arrastra el dedo sobre placas o rostros para pixelarlos.
+        </p>
+        <canvas id="canvas-foto"></canvas>
+
+        <div class="fila-herramientas-canvas">
+          <button type="button" id="btn-deshacer-pixel" class="btn-secundario">↩ Deshacer</button>
+          <button type="button" id="btn-quitar-foto" class="btn-peligro-suave">Quitar foto</button>
+        </div>
+
+        <label class="casilla-privacidad">
+          <input type="checkbox" id="check-privacidad-foto" />
+          <span>Confirmo que no se ven placas ni rostros</span>
+        </label>
+      </div>
+      <div id="error-foto" class="error-campo" hidden></div>
+    </section>
+
+    <!-- f) Observaciones (opcional, máx. 140 caracteres) -->
+    <section class="tarjeta">
+      <div class="fila-cabecera-seccion">
+        <label for="input-observaciones"><strong>6. Observaciones (opcional)</strong></label>
+        <span id="contador-obs" class="texto-suave">0 / 140</span>
+      </div>
+      <p class="aviso-privacidad">No escribas placas ni nombres.</p>
+      <textarea
+        id="input-observaciones"
+        class="control-textarea"
+        maxlength="140"
+        rows="2"
+        placeholder="Ej. Camión descargando sobre la esquina norte..."
+      ></textarea>
+    </section>
+
+    <!-- g) Fecha y hora automática con control colapsado -->
+    <section class="tarjeta">
+      <div class="fila-cabecera-seccion">
+        <span><strong>7. Fecha y hora:</strong> <span id="texto-fecha-actual" class="texto-mono"></span></span>
+      </div>
+      <details id="detalle-fecha-hora" class="control-colapsado">
+        <summary>Corregir fecha y hora</summary>
+        <div class="contenido-colapsado">
+          <label for="input-fecha-hora" class="etiqueta-control">Fecha y hora local:</label>
+          <input type="datetime-local" id="input-fecha-hora" class="control-input" />
+        </div>
+      </details>
+    </section>
+
+    <!-- Espacio reservado para que el botón fijo no tape la última tarjeta -->
+    <div class="espacio-barra-fija"></div>
+
+    <!-- h) Botón fijo Guardar reporte -->
+    <div class="barra-guardar-fija">
+      <button type="button" id="btn-guardar" class="btn-primario btn-ancho">
+        Guardar reporte
+      </button>
+    </div>
+  </main>
+
+  <!-- ======================================================================
+       VISTA 2: REGISTROS Y EXPORTACIÓN / IMPORTACIÓN
+       ====================================================================== -->
+  <main id="vista-registros" class="contenedor-principal" hidden>
+    <!-- Resumen de avance hacia los 30 registros de campo -->
+    <section class="tarjeta">
+      <div class="fila-cabecera-seccion">
+        <h2>Avance de campo</h2>
+        <span id="contador-meta-30" class="contador-grande">0 de 30</span>
+      </div>
+      <p id="desglose-franjas" class="texto-destacado">Hora pico: 0 · Hora valle: 0</p>
+      <div id="desglose-cuadras" class="contenedor-chips"></div>
+      <p id="uso-almacenamiento" class="texto-suave margen-superior">Almacenamiento: 0,00 de 5 MB</p>
+    </section>
+
+    <!-- Exportar e importar (RF-06) -->
+    <section class="tarjeta">
+      <h2>Reunir datos del equipo (RF-06)</h2>
+      <div class="rejilla-exportar">
+        <button type="button" id="btn-exportar-con-fotos" class="btn-secundario">
+          Exportar JSON (con fotos)
+        </button>
+        <button type="button" id="btn-exportar-sin-fotos" class="btn-secundario">
+          Exportar JSON (sin fotos)
+        </button>
+        <button type="button" id="btn-exportar-zip" class="btn-secundario">
+          Exportar paquete (.zip)
+        </button>
+        <button type="button" id="btn-importar-json" class="btn-primario">
+          Importar JSON
+        </button>
+      </div>
+      <input type="file" id="input-importar-json" accept=".json,application/json" hidden />
+      <div id="resultado-importacion" class="aviso-info margen-superior" hidden></div>
+    </section>
+
+    <!-- Mapa pequeño de verificación de puntos -->
+    <section class="tarjeta">
+      <h2>Mapa de puntos registrados</h2>
+      <div id="mapa-registros" class="caja-mapa caja-mapa-pequeno"></div>
+    </section>
+
+    <!-- Lista de reportes (más recientes primero) -->
+    <section class="tarjeta">
+      <h2>Reportes (más recientes primero)</h2>
+      <div id="lista-registros" class="lista-tarjetas"></div>
+    </section>
+  </main>
+
+  <!-- ======================================================================
+       MODAL DE AJUSTES (i)
+       ====================================================================== -->
+  <div id="modal-ajustes" class="fondo-modal" hidden>
+    <div class="caja-modal" role="dialog" aria-modal="true" aria-labelledby="titulo-ajustes">
+      <h2 id="titulo-ajustes">Ajustes del integrante</h2>
+      <p class="ayuda-campo">Tus iniciales identifican los reportes que levantes en este celular.</p>
+
+      <label for="input-iniciales" class="etiqueta-control">Iniciales (2 a 3 letras):</label>
+      <input
+        type="text"
+        id="input-iniciales"
+        class="control-input"
+        maxlength="3"
+        placeholder="Ej. ASO"
+        autocomplete="off"
+      />
+
+      <label for="select-origen" class="etiqueta-control">Origen por defecto:</label>
+      <select id="select-origen" class="control-select">
+        <option value="campo">Recorrido de campo</option>
+        <option value="ciudadano">Ciudadano</option>
+      </select>
+
+      <div id="error-ajustes" class="error-campo" hidden></div>
+
+      <div class="fila-botones-modal">
+        <button type="button" id="btn-cerrar-ajustes" class="btn-secundario">Cancelar</button>
+        <button type="button" id="btn-guardar-ajustes" class="btn-primario">Guardar ajustes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       NAVEGACIÓN INFERIOR FIJA (DOS VISTAS SIN RECARGAR)
+       ====================================================================== -->
+  <nav class="nav-inferior" aria-label="Navegación principal">
+    <button type="button" id="tab-captura" class="btn-nav activo">
+      ➕ Captura
+    </button>
+    <button type="button" id="tab-registros" class="btn-nav">
+      📋 Registros (<span id="badge-total-registros">0</span>)
+    </button>
+  </nav>
+
+  <!-- Scripts en el orden estricto indicado (clásicos, sin módulos ES) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="criticidad.js"></script>
+  <script src="almacenamiento.js"></script>
+  <script src="mapa.js"></script>
+  <script src="captura.js"></script>
+</body>
+</html>
